@@ -32,7 +32,7 @@ datasets
 ```
 
 + Raw data and details of PFSD can be found
-**[here](https://ml1323.github.io/MUSE-VAE/tree-of-codes)**
+**[here](https://ml1323.github.io/MUSE-VAE/dataset)**
 
 
 ## Running models
@@ -41,7 +41,7 @@ datasets
 sh eval.sh
 ```
 
-+ You can use the scripts starting with `train` under `scripts/pfsd/` to train each of the network.
++ You can use the scripts starting with `train` under `scripts/pfsd` to train each of the network.
 ```bash
 sh train_lg_cvae.sh
 sh train_sg_net.sh
