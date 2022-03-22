@@ -1,13 +1,12 @@
 ## MUSE-VAE
 
 ### Multi-Scale VAE for Environment-Aware Long Term Trajectory Prediction
-
+**CVPR 2022**
 > Mihee Lee, Samuel S. Sohn, Seonghyeon Moon, Sejong Yoon, Mubbasir Kapadia, Vladimir Pavlovic
 
-> CVPR 2022
 
 [Paper](https://arxiv.org/abs/2201.07189)
-&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;
 [Website](https://ml1323.github.io/MUSE-VAE)
 
 
@@ -15,20 +14,25 @@
 ## Pretrained Models
 + You can download pretrained models for PFSD from
 **[PFSD models](https://drive.google.com/file/d/1QGGgYNomsQf2bCrR3OXBDi_1yWLHJm6y/view?usp=sharing)**
-+ Place the unzipped directory under the `datasets` directory as follows.
+
++ Place the unzipped directory under the `ckpts` directory as follows.
 ```bash
-datasets
+ckpts
     |- pretrained_models_pfsd
 ```
 
 ## Datasets
-+ You can download our new dataset, PathFinding Simulation Dataset (PFSD) here.
++ The pre-processed version of our new dataset, PathFinding Simulation Dataset (PFSD), is available for download at
+**[Preprocessed PFSD](https://drive.google.com/file/d/1Wm5CTBrxozg9zMKvS2l9M3XtHhWyy3g9/view?usp=sharing)**
 
-**[Raw data](https://drive.google.com/file/d/1QGGgYNomsQf2bCrR3OXBDi_1yWLHJm6y/view?usp=sharing)**
++ Place the unzipped pkl files under the `datasets/pfsd` directory as follows.
+```bash
+datasets
+    |- pfsd
+```
 
-**[Preprocessed data for MUSE-VAE](https://drive.google.com/file/d/1Wm5CTBrxozg9zMKvS2l9M3XtHhWyy3g9/view?usp=sharing)**
-
-+ Details regarding PFSD can be found [here](https://ml1323.github.io/MUSE-VAE/tree-of-codes)
++ Raw data and details of PFSD can be found
+**[here](https://ml1323.github.io/MUSE-VAE/tree-of-codes)**
 
 
 ## Running models
