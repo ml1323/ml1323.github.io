@@ -32,7 +32,7 @@ datasets
 ```
 
 + Raw data and details of PFSD can be found
-**[here](https://ml1323.github.io/MUSE-VAE/dataset)**
+**[here](https://ml1323.github.io/MUSE-VAE/dataset/)**
 
 
 ## Running models
