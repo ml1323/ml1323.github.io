@@ -13,7 +13,7 @@
 
 ## Pretrained Models
 + You can download pretrained models for PFSD from
-**[PFSD models](https://drive.google.com/file/d/1QGGgYNomsQf2bCrR3OXBDi_1yWLHJm6y/view?usp=sharing)**
+**[PFSD models](https://drive.google.com/file/d/1HWzOzskjDjdYCJLiHpHM1L7Dg-NPMhoy/view?usp=sharing)**
 
 + Place the unzipped directory under the `ckpts` directory as follows.
 ```bash
