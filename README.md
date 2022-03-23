@@ -16,7 +16,7 @@
 **[PFSD models](https://drive.google.com/file/d/1HWzOzskjDjdYCJLiHpHM1L7Dg-NPMhoy/view?usp=sharing)**
 
 + Place the unzipped directory under the `ckpts` directory as follows.
-```bash
+```
 ckpts
     |- pretrained_models_pfsd
 ```
@@ -26,7 +26,7 @@ ckpts
 **[Preprocessed PFSD](https://drive.google.com/file/d/1Wm5CTBrxozg9zMKvS2l9M3XtHhWyy3g9/view?usp=sharing)**
 
 + Place the unzipped pkl files under the `datasets/pfsd` directory as follows.
-```bash
+```
 datasets
     |- pfsd
 ```
@@ -46,4 +46,16 @@ sh eval.sh
 sh train_lg_cvae.sh
 sh train_sg_net.sh
 sh train_micro.sh
+```
+
+## BibTex
+```
+@InProceedings{Lee_2022_CVPR,
+    author    = {Mihee Lee, Samuel S. Sohn, Seonghyeon Moon, Sejong Yoon, Mubbasir Kapadia, Vladimir Pavlovic},
+    title     = {Multi-Scale VAE for Environment-Aware Long Term Trajectory Prediction},
+    booktitle = {Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
+    month     = {June},
+    year      = {2022},
+    pages     = {-}
+}
 ```
