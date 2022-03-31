@@ -6,7 +6,8 @@ from util import *
 from unet.unet import Unet
 import numpy as np
 import torch.nn.functional as F
-
+from data.nuscenes.config import Config
+from data.nuscenes_dataloader import data_generator
 
 class Solver(object):
 
@@ -18,6 +19,7 @@ class Solver(object):
         self.name = '%s_%s_lr_%s_n_goal_%s_run_%s' % \
                     (args.dataset_name, args.model_name, args.lr, args.num_goal, args.run_id)
 
+        self.dataset_name = args.dataset_name
         self.model_name = args.model_name
         self.device = args.device
         self.dt=args.dt
@@ -49,19 +51,29 @@ class Solver(object):
             lr=self.lr
         )
         print('Start loading data...')
-
-
-        print("Initializing train dataset")
-        _, self.train_loader = data_loader(self.args, 'train', shuffle=True)
-        print("Initializing val dataset")
-        _, self.val_loader = data_loader(self.args, 'val', shuffle=True)
-
-        print(
-            'There are {} iterations per epoch'.format(len(self.train_loader.dataset) / args.batch_size)
-        )
+        if self.dataset_name == 'nuScenes':
+            cfg = Config('nuscenes_train', False, create_dirs=True)
+            torch.set_default_dtype(torch.float32)
+            log = open('log.txt', 'a+')
+            self.train_loader = data_generator(cfg, log, split='train', phase='training',
+                                               batch_size=args.batch_size, device=self.device, scale=args.scale, shuffle=True)
+            cfg = Config('nuscenes', False, create_dirs=True)
+            torch.set_default_dtype(torch.float32)
+            log = open('log.txt', 'a+')
+            self.val_loader = data_generator(cfg, log, split='val', phase='testing',
+                                             batch_size=args.batch_size, device=self.device, scale=args.scale, shuffle=True)
+            print(
+                'There are {} iterations per epoch'.format(len(self.train_loader.idx_list))
+            )
+        else:
+            _, self.train_loader = data_loader(self.args, 'train', shuffle=True)
+            _, self.val_loader = data_loader(self.args, 'val', shuffle=True)
+            print(
+                'There are {} iterations per epoch'.format(len(self.train_loader.dataset) / args.batch_size)
+            )
         print('...done')
 
-        hg = heatmap_generation(args.dataset_name, self.obs_len, sg_idx=self.sg_idx, device=self.device)
+        hg = heatmap_generation(args.dataset_name, self.obs_len, args.heatmap_size, sg_idx=self.sg_idx, device=self.device)
         self.make_heatmap = hg.make_heatmap
 
 
@@ -69,24 +81,35 @@ class Solver(object):
     def train(self):
         self.set_mode(train=True)
         data_loader = self.train_loader
-        iterator = iter(data_loader)
-
-        iter_per_epoch = len(iterator)
+        if self.dataset_name == 'nuScenes':
+            iter_per_epoch = len(data_loader.idx_list)
+        else:
+            iterator = iter(data_loader)
+            iter_per_epoch = len(iterator)
         start_iter = 1
         epoch = int(start_iter / iter_per_epoch)
 
-
         for iteration in range(start_iter, self.max_iter + 1):
-
             # reset data iterators for each epoch
             if iteration % iter_per_epoch == 0:
                 print('==== epoch %d done ====' % epoch)
                 epoch +=1
-                iterator = iter(data_loader)
+                if self.dataset_name == 'nuScenes':
+                    data_loader.is_epoch_end()
+                else:
+                    iterator = iter(data_loader)
+
+            if self.dataset_name == 'nuScenes':
+                data = data_loader.next_sample()
+                if data is None:
+                    continue
+            else:
+                data = next(iterator)
 
             (obs_traj, fut_traj, obs_traj_st, fut_vel_st, seq_start_end,
-             obs_frames, pred_frames, map_path, inv_h_t,
-             local_map, local_ic, local_homo) = next(iterator)
+             map_info, inv_h_t,
+             local_map, local_ic, local_homo) = data
+
             batch_size = obs_traj.size(1)
 
             obs_heat_map, sg_heat_map, lg_heat_map = self.make_heatmap(local_ic, local_map, aug=True)

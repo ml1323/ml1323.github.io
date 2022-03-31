@@ -41,7 +41,6 @@ class Encoder(nn.Module):
             layers.append(nn.Conv2d(input_dim, output_dim, kernel_size=3, padding=int(padding)))
             layers.append(nn.ReLU(inplace=True))
 
-            # for _ in range(no_convs_per_block - 1):
         layers.append(nn.AvgPool2d(kernel_size=2, stride=2, padding=0, ceil_mode=True))
         layers.append(nn.Conv2d(output_dim, output_dim, kernel_size=3, padding=int(padding)))
         layers.append(nn.ReLU(inplace=True))
@@ -94,8 +93,7 @@ class AxisAlignedConvGaussian(nn.Module):
         if segm is not None:
             input = torch.cat((input, segm), dim=1)
 
-        encoding = self.encoder(input)  # [4, 128, 10, 10]
-        # self.show_enc = encoding
+        encoding = self.encoder(input)  
 
         # We only want the mean of the resulting hxw image
         encoding = torch.mean(encoding, dim=2, keepdim=True)
@@ -110,9 +108,6 @@ class AxisAlignedConvGaussian(nn.Module):
 
         mu = mu_log_sigma[:, :self.latent_dim]
         log_var = mu_log_sigma[:, self.latent_dim:]
-
-        mu = torch.clamp(mu, min=1e-8, max=1e8)
-        log_var = torch.clamp(log_var, min=1e-8, max=8e1)
 
         dist = Normal(loc=mu, scale=torch.sqrt(torch.exp(log_var)))
         return dist
@@ -151,7 +146,6 @@ class Fcomb(nn.Module):
 
             self.layers = nn.Sequential(*layers)
 
-            # self.last_layer = nn.Conv2d(self.num_filters[0], self.num_classes, kernel_size=1)
 
             if initializers['w'] == 'orthogonal':
                 self.layers.apply(init_weights_orthogonal_normal)

@@ -4,41 +4,44 @@ import torch
 from torchvision import transforms
 import os
 import argparse
-
+import cv2
 
 class heatmap_generation(object):
-    def __init__(self, dataset, obs_len, sg_idx=None, device='cpu'):
+    def __init__(self, dataset, obs_len, heatmap_size, sg_idx=None, device='cpu'):
         self.obs_len = obs_len
         self.device = device
         self.sg_idx = sg_idx
+        self.heatmap_size = heatmap_size
         if dataset == 'pfsd':
-            self.make_heatmap = self.make_psfd_heatmap
+            self.make_heatmap = self.create_psfd_heatmap
         elif dataset == 'sdd':
-            self.make_heatmap = self.make_sdd_heatmap
+            self.make_heatmap = self.create_sdd_heatmap
+        else:
+            self.make_heatmap = self.create_nu_heatmap
 
-    def make_psfd_heatmap(self, local_ic, local_map, aug=False):
+    def create_psfd_heatmap(self, local_ic, local_map, aug=False):
         heatmaps = []
         for i in range(len(local_ic)):
-            ohm = [local_map[i, 0]]
-            heat_map_traj = np.zeros((160, 160))
+            all_heatmap = [local_map[i]]
+            heatmap = np.zeros((self.heatmap_size, self.heatmap_size))
             for t in range(self.obs_len):
-                heat_map_traj[local_ic[i, t, 0], local_ic[i, t, 1]] = 1
+                heatmap[local_ic[i, t, 0], local_ic[i, t, 1]] = 1
                 # as Y-net used variance 4 for the GT heatmap representation.
-            heat_map_traj = ndimage.filters.gaussian_filter(heat_map_traj, sigma=2)
-            ohm.append(heat_map_traj / heat_map_traj.sum())
+            heatmap = ndimage.filters.gaussian_filter(heatmap, sigma=2)
+            all_heatmap.append(heatmap / heatmap.sum())
 
             if self.sg_idx is None:
-                heat_map_traj = np.zeros((160, 160))
-                heat_map_traj[local_ic[i, -1, 0], local_ic[i, -1, 1]] = 1
-                heat_map_traj = ndimage.filters.gaussian_filter(heat_map_traj, sigma=2)
-                ohm.append(heat_map_traj)
+                heatmap = np.zeros((self.heatmap_size, self.heatmap_size))
+                heatmap[local_ic[i, -1, 0], local_ic[i, -1, 1]] = 1
+                heatmap = ndimage.filters.gaussian_filter(heatmap, sigma=2)
+                all_heatmap.append(heatmap)
             else:
                 for t in (self.sg_idx + self.obs_len):
-                    heat_map_traj = np.zeros((160, 160))
-                    heat_map_traj[local_ic[i, t, 0], local_ic[i, t, 1]] = 1
-                    heat_map_traj = ndimage.filters.gaussian_filter(heat_map_traj, sigma=2)
-                    ohm.append(heat_map_traj)
-            heatmaps.append(np.stack(ohm))
+                    heatmap = np.zeros((self.heatmap_size, self.heatmap_size))
+                    heatmap[local_ic[i, t, 0], local_ic[i, t, 1]] = 1
+                    heatmap = ndimage.filters.gaussian_filter(heatmap, sigma=2)
+                    all_heatmap.append(heatmap)
+            heatmaps.append(np.stack(all_heatmap))
 
         heatmaps = torch.tensor(np.stack(heatmaps)).float().to(self.device)
         if aug:
@@ -53,42 +56,146 @@ class heatmap_generation(object):
             return heatmaps[:, :2], heatmaps[:, 2:], heatmaps[:, -1].unsqueeze(1)
 
 
+    def make_one_heatmap(self, local_map, local_ic):
+        map_size = local_map.shape[0]
+        half = self.heatmap_size // 2
+        if map_size < self.heatmap_size:
+            heatmap = np.zeros_like(local_map)
+            heatmap[local_ic[0], local_ic[1]] = 1
+            heatmap = ndimage.filters.gaussian_filter(heatmap, sigma=2)
+            extended_map = np.zeros((self.heatmap_size, self.heatmap_size))
+            extended_map[half - map_size // 2:half + map_size // 2,half - map_size // 2:half + map_size // 2] = heatmap
+            heatmap = extended_map
+        else:
+            heatmap = np.zeros_like(local_map)
+            heatmap[local_ic[0], local_ic[1]] = 1000
+            if map_size > 1000:
+                heatmap = cv2.resize(ndimage.filters.gaussian_filter(heatmap, sigma=2),
+                                           dsize=((map_size + self.heatmap_size) // 2, (map_size + self.heatmap_size) // 2))
+            heatmap = cv2.resize(ndimage.filters.gaussian_filter(heatmap, sigma=2),
+                                       dsize=(self.heatmap_size, self.heatmap_size))
+            heatmap = heatmap / heatmap.sum()
+            heatmap = ndimage.filters.gaussian_filter(heatmap, sigma=2)
+        return heatmap
 
-    def make_sdd_heatmap(self, obs_len, local_ic, local_map, device='cpu', aug=False):
-        heatmaps = []
+
+    def create_sdd_heatmap(self, local_ic, local_map, aug=False):
+        heatmaps=[]
+        half = self.heatmap_size//2
         for i in range(len(local_ic)):
-            ohm = [local_map[i, 0]]
-            heat_map_traj = np.zeros((160, 160))
-            for t in range(obs_len):
-                heat_map_traj[local_ic[i, t, 0], local_ic[i, t, 1]] = 1
-                # as Y-net used variance 4 for the GT heatmap representation.
-            heat_map_traj = ndimage.filters.gaussian_filter(heat_map_traj, sigma=2)
-            ohm.append(heat_map_traj / heat_map_traj.sum())
-
-            if self.sg_idx is None:
-                heat_map_traj = np.zeros((160, 160))
-                heat_map_traj[local_ic[i, -1, 0], local_ic[i, -1, 1]] = 1
-                heat_map_traj = ndimage.filters.gaussian_filter(heat_map_traj, sigma=2)
-                ohm.append(heat_map_traj)
+            map_size = local_map[i].shape[0]
+            # past
+            if map_size < self.heatmap_size:
+                env = np.full((self.heatmap_size,self.heatmap_size),3)
+                env[half-map_size//2:half+map_size//2, half-map_size//2:half+map_size//2] = local_map[i]
+                all_heatmap = [env/5]
+                heatmap = np.zeros_like(local_map[i])
+                heatmap[local_ic[i, :self.obs_len, 0], local_ic[i, :self.obs_len, 1]] = 1
+                heatmap= ndimage.filters.gaussian_filter(heatmap, sigma=2)
+                heatmap = heatmap / heatmap.sum()
+                extended_map = np.zeros((self.heatmap_size, self.heatmap_size))
+                extended_map[half-map_size//2:half+map_size//2, half-map_size//2:half+map_size//2] = heatmap
+                all_heatmap.append(extended_map)
             else:
-                for t in (self.sg_idx + obs_len):
-                    heat_map_traj = np.zeros((160, 160))
-                    heat_map_traj[local_ic[i, t, 0], local_ic[i, t, 1]] = 1
-                    heat_map_traj = ndimage.filters.gaussian_filter(heat_map_traj, sigma=2)
-                    ohm.append(heat_map_traj)
-            heatmaps.append(np.stack(ohm))
+                env = cv2.resize(local_map[i], dsize=(self.heatmap_size, self.heatmap_size))
+                all_heatmap = [env/5]
+                heatmap = np.zeros_like(local_map[i])
+                heatmap[local_ic[i, :self.obs_len, 0], local_ic[i, :self.obs_len, 1]] = 100
+                if map_size > 1000:
+                    heatmap = cv2.resize(ndimage.filters.gaussian_filter(heatmap, sigma=2),
+                                               dsize=((map_size+self.heatmap_size)//2, (map_size+self.heatmap_size)//2))
+                    heatmap = heatmap / heatmap.sum()
+                heatmap = cv2.resize(ndimage.filters.gaussian_filter(heatmap, sigma=2), dsize=(self.heatmap_size, self.heatmap_size))
+                if map_size > 3500:
+                    heatmap[np.where(heatmap > 0)] = 1
+                else:
+                    heatmap = heatmap / heatmap.sum()
+                heatmap = ndimage.filters.gaussian_filter(heatmap, sigma=2)
+                all_heatmap.append(heatmap / heatmap.sum())
 
-        heatmaps = torch.tensor(np.stack(heatmaps)).float().to(device)
+            # future
+            if self.sg_idx is None:
+                heatmap = self.make_one_heatmap(local_map[i], local_ic[i, -1])
+                all_heatmap.append(heatmap)
+            else:
+                for j in (self.sg_idx + self.obs_len):
+                    heatmap = self.make_one_heatmap(local_map[i], local_ic[i, j])
+                    all_heatmap.append(heatmap)
+            heatmaps.append(np.stack(all_heatmap))
+
+        heatmaps = torch.tensor(np.stack(heatmaps)).float().to(self.device)
+
         if aug:
-            degree = np.random.choice([0, 90, 180, -90])
+            degree = np.random.choice([0,90,180, -90])
             heatmaps = transforms.Compose([
                 transforms.RandomRotation(degrees=(degree, degree))
             ])(heatmaps)
-
         if self.sg_idx is None:
             return heatmaps[:, :2], heatmaps[:, 2:]
         else:
             return heatmaps[:, :2], heatmaps[:, 2:], heatmaps[:, -1].unsqueeze(1)
+
+
+
+
+
+    def create_nu_heatmap(self, local_ic, local_map, aug=False):
+        heatmaps=[]
+        half = self.heatmap_size//2
+        for i in range(len(local_ic)):
+            map_size = local_map[i].shape[0]
+            # past
+            if map_size < self.heatmap_size:
+                env = np.full((self.heatmap_size,self.heatmap_size),1)
+                env[half-map_size//2:half+map_size//2, half-map_size//2:half+map_size//2] = local_map[i]
+                all_heatmap = [env]
+                heatmap = np.zeros_like(local_map[i])
+                heatmap[local_ic[i, :self.obs_len, 0], local_ic[i, :self.obs_len, 1]] = 1
+                heatmap= ndimage.filters.gaussian_filter(heatmap, sigma=2)
+                heatmap = heatmap / heatmap.sum()
+                extended_map = np.zeros((self.heatmap_size, self.heatmap_size))
+                extended_map[half-map_size//2:half+map_size//2, half-map_size//2:half+map_size//2] = heatmap
+                all_heatmap.append(extended_map)
+            else:
+                env = cv2.resize(local_map[i], dsize=(self.heatmap_size, self.heatmap_size))
+                all_heatmap = [env]
+                heatmap = np.zeros_like(local_map[i])
+                heatmap[local_ic[i, :self.obs_len, 0], local_ic[i, :self.obs_len, 1]] = 100
+                if map_size > 1000:
+                    heatmap = cv2.resize(ndimage.filters.gaussian_filter(heatmap, sigma=2),
+                                               dsize=((map_size+self.heatmap_size)//2, (map_size+self.heatmap_size)//2))
+                    heatmap = heatmap / heatmap.sum()
+                heatmap = cv2.resize(ndimage.filters.gaussian_filter(heatmap, sigma=2), dsize=(self.heatmap_size, self.heatmap_size))
+                if map_size > 3500:
+                    heatmap[np.where(heatmap > 0)] = 1
+                else:
+                    heatmap = heatmap / heatmap.sum()
+                heatmap = ndimage.filters.gaussian_filter(heatmap, sigma=2)
+                all_heatmap.append(heatmap / heatmap.sum())
+
+            # future
+            if self.sg_idx is None:
+                heatmap = self.make_one_heatmap(local_map[i], local_ic[i, -1])
+                all_heatmap.append(heatmap)
+            else:
+                for j in (self.sg_idx + self.obs_len):
+                    heatmap = self.make_one_heatmap(local_map[i], local_ic[i, j])
+                    all_heatmap.append(heatmap)
+            heatmaps.append(np.stack(all_heatmap))
+
+        heatmaps = torch.tensor(np.stack(heatmaps)).float().to(self.device)
+
+        if aug:
+            degree = np.random.choice([0,90,180, -90])
+            heatmaps = transforms.Compose([
+                transforms.RandomRotation(degrees=(degree, degree))
+            ])(heatmaps)
+        if self.sg_idx is None:
+            return heatmaps[:, :2], heatmaps[:, 2:]
+        else:
+            return heatmaps[:, :2], heatmaps[:, 2:], heatmaps[:, -1].unsqueeze(1)
+
+
 
 
 def mkdirs(path):

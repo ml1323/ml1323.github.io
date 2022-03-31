@@ -4,7 +4,8 @@ from util import *
 
 
 from unet.probabilistic_unet import ProbabilisticUnet
-import numpy as np
+from data.nuscenes.config import Config
+from data.nuscenes_dataloader import data_generator
 import torch.nn.functional as F
 from unet.utils import init_weights
 
@@ -14,14 +15,14 @@ class Solver(object):
         self.args = args
 
         if args.model_name == 'lg_ae':
-            self.name = '%s_%s_wD_%s_lr_%s' % \
-                        (args.dataset_name, args.model_name, args.w_dim, args.lr)
+            self.name = '%s_%s_wD_%s_lr_%s_fcomb_%s' % \
+                        (args.dataset_name, args.model_name, args.w_dim, args.lr, args.fcomb)
         else:
-            self.name = '%s_%s_wD_%s_lr_%s_lg_klw_%s_fb_%s_anneal_e_%s' % \
+            self.name = '%s_%s_wD_%s_lr_%s_fb_%s_anneal_e_%s_fcomb_%s' % \
                         (args.dataset_name, args.model_name, args.w_dim, args.lr,
-                         args.lg_kl_weight, args.fb, args.anneal_epoch)
+                         args.fb, args.anneal_epoch, args.fcomb)
         self.name = self.name + '_run_' + str(args.run_id)
-
+        self.dataset_name = args.dataset_name
         self.model_name = args.model_name
         self.fb = args.fb
         self.anneal_epoch = args.anneal_epoch
@@ -33,9 +34,9 @@ class Solver(object):
         self.alpha = 0.25
         self.gamma = 2
         self.eps=1e-9
+        self.lg_kl_weight=1
 
         self.w_dim = args.w_dim
-        self.lg_kl_weight=args.lg_kl_weight
 
         self.max_iter = int(args.max_iter)
         self.lr = args.lr
@@ -54,7 +55,7 @@ class Solver(object):
                 num_filters = [32, 32, 64, 64, 64]
                 self.lg_cvae = ProbabilisticUnet(input_channels=2, num_classes=1, num_filters=num_filters,
                                                  latent_dim=self.w_dim,
-                                                 no_convs_fcomb=2,
+                                                 no_convs_fcomb=args.fcomb,
                                                  no_convs_per_block=1, beta=self.lg_kl_weight).to(self.device)
             elif args.model_name == 'lg_cvae':
                 if self.device == 'cuda':
@@ -66,7 +67,7 @@ class Solver(object):
                 for m in self.lg_cvae.unet.upsampling_path:
                     m.apply(init_weights)
                 self.lg_cvae.fcomb.apply(init_weights)
-                self.lg_cvae.beta = args.lg_kl_weight
+                self.lg_cvae.beta = self.lg_kl_weight
 
         else:  # load a previously saved model
             print('Loading saved models (iter: %d)...' % self.ckpt_load_iter)
@@ -79,17 +80,29 @@ class Solver(object):
         )
 
         print('Start loading data...')
-
-        print("Initializing train dataset")
-        _, self.train_loader = data_loader(self.args, 'train', shuffle=True)
-        print("Initializing val dataset")
-        _, self.val_loader = data_loader(self.args, 'val', shuffle=True)
-        print(
-            'There are {} iterations per epoch'.format(len(self.train_loader.dataset) / args.batch_size)
-        )
+        if self.dataset_name == 'nuScenes':
+            cfg = Config('nuscenes_train', False, create_dirs=True)
+            torch.set_default_dtype(torch.float32)
+            log = open('log.txt', 'a+')
+            self.train_loader = data_generator(cfg, log, split='train', phase='training',
+                                               batch_size=args.batch_size, device=self.device, scale=args.scale, shuffle=True)
+            cfg = Config('nuscenes', False, create_dirs=True)
+            torch.set_default_dtype(torch.float32)
+            log = open('log.txt', 'a+')
+            self.val_loader = data_generator(cfg, log, split='val', phase='testing',
+                                             batch_size=args.batch_size, device=self.device, scale=args.scale, shuffle=True)
+            print(
+                'There are {} iterations per epoch'.format(len(self.train_loader.idx_list))
+            )
+        else:
+            _, self.train_loader = data_loader(self.args, 'train', shuffle=True)
+            _, self.val_loader = data_loader(self.args, 'val', shuffle=True)
+            print(
+                'There are {} iterations per epoch'.format(len(self.train_loader.dataset) / args.batch_size)
+            )
         print('...done')
 
-        hg = heatmap_generation(args.dataset_name, self.obs_len, sg_idx=None, device=self.device)
+        hg = heatmap_generation(args.dataset_name, self.obs_len, args.heatmap_size, sg_idx=None, device=self.device)
         self.make_heatmap = hg.make_heatmap
 
 
@@ -98,34 +111,47 @@ class Solver(object):
     def train(self):
         self.set_mode(train=True)
         data_loader = self.train_loader
-        iterator = iter(data_loader)
 
-        iter_per_epoch = len(iterator)
+        if self.dataset_name == 'nuScenes':
+            iter_per_epoch = len(data_loader.idx_list)
+        else:
+            iterator = iter(data_loader)
+            iter_per_epoch = len(iterator)
         start_iter = 1
         epoch = int(start_iter / iter_per_epoch)
+
 
         lg_kl_weight = self.lg_kl_weight
         if self.anneal_epoch > 0:
             lg_kl_weight = 0
 
         for iteration in range(start_iter, self.max_iter + 1):
-
             # reset data iterators for each epoch
             if iteration % iter_per_epoch == 0:
                 print('==== epoch %d done ====' % epoch)
                 epoch +=1
                 if self.anneal_epoch > 0:
                     lg_kl_weight = min(self.lg_kl_weight * (epoch / self.anneal_epoch), self.lg_kl_weight)
-                    print('>>>>>>>> kl_w: ', lg_kl_weight)
-                iterator = iter(data_loader)
+                    print('kl_w: ', lg_kl_weight)
+                if self.dataset_name == 'nuScenes':
+                    data_loader.is_epoch_end()
+                else:
+                    iterator = iter(data_loader)
+
+            if self.dataset_name == 'nuScenes':
+                data = data_loader.next_sample()
+                if data is None:
+                    continue
+            else:
+                data = next(iterator)
 
             (obs_traj, fut_traj, obs_traj_st, fut_vel_st, seq_start_end,
-             obs_frames, pred_frames, map_path, inv_h_t,
-             local_map, local_ic, local_homo) = next(iterator)
+             map_info, inv_h_t,
+             local_map, local_ic, local_homo) = data
 
             batch_size = obs_traj.size(1)
 
-            obs_heat_map, lg_heat_map =  self.make_heatmap(local_ic, local_map, aug=True)
+            obs_heat_map, lg_heat_map = self.make_heatmap(local_ic, local_map, aug=True)
 
             recon_lg_heat = self.lg_cvae.forward(obs_heat_map, lg_heat_map, training=True)
             recon_lg_heat = F.normalize(F.sigmoid(recon_lg_heat).view(recon_lg_heat.shape[0],-1), p=1)

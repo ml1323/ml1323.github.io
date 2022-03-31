@@ -27,17 +27,6 @@ class data_generator(object):
         data_root = parser.data_root_nuscenes_pred
         seq_train, seq_val, seq_test = get_nuscenes_pred_split(data_root)
         self.init_frame = 0
-        # from nuscenes.nuscenes import NuScenes
-        # data_path = '/dresden/users/ml1323/crowd/datasets/Nuscenes/'
-        # nusc = NuScenes(version='v1.0-trainval', dataroot=data_path, verbose=True)
-        # import csv
-        # map_name = {}
-        # with open('D:\crowd\mcrowd/nu_map.csv', newline='') as f:
-        #     dd = csv.reader(f)
-        #     for l in dd:
-        #         map_name.update({l[0]:l[1]})
-
-
         process_func = preprocess
         self.data_root = data_root
 
@@ -45,7 +34,7 @@ class data_generator(object):
         if self.split == 'train':  self.sequence_to_load = seq_train
         elif self.split == 'val':  self.sequence_to_load = seq_val
         elif self.split == 'test': self.sequence_to_load = seq_test
-        else:                      assert False, 'error'
+        else: assert False, 'error'
 
         self.num_total_samples = 0
         self.num_sample_list = []
@@ -92,7 +81,7 @@ class data_generator(object):
         assert False, 'index is %d, out of range' % (index)
 
     def is_epoch_end(self, force=False):
-        if (self.index >= len(self.idx_list)) or force:
+        if (self.index+1 >= len(self.idx_list)) or force:
             self.index = 0      # reset
             return True
         else:
@@ -115,16 +104,8 @@ class data_generator(object):
             # get valid seq
             data = seq(frame)
             if data is None:
-                # print(0)
                 continue
-                # return data
-            # print(len(data['pre_motion_3D']))
-            # if self.split == 'train' and len(data['pre_motion_3D']) > self.max_train_agent:
-            #     in_data = {}
-            #     ind = np.random.choice(len(data['pre_motion_3D']), self.max_train_agent).tolist()
-            #     for key in ['pre_motion_3D', 'fut_motion_3D', 'fut_motion_mask', 'pre_motion_mask', 'heading']:
-            #         in_data[key] = [data[key][i] for i in ind if data[key] is not None]
-            # else:
+
             in_data = data
             obs_traj.append(torch.stack(in_data['pre_motion_3D']))
             fut_traj.append(torch.stack(in_data['fut_motion_3D']))
@@ -132,22 +113,16 @@ class data_generator(object):
             all_traj = torch.cat([obs_traj[-1], fut_traj[-1]], dim=1)
             # get local map
             scene_map = data['scene_map']
-            # scene_points = obs_traj[:, -1] * data['traj_scale']
             scene_points = all_traj * data['traj_scale']
             radius = []
             for i in range(len(all_traj)):
                 map_traj = scene_map.to_map_points(scene_points[i])
-                # import matplotlib.pyplot as plt
-                # plt.imshow(scene_map.data.transpose(1,2,0))
-                # plt.scatter(map_traj[:,1], map_traj[:,0], s=1)
 
                 r = np.clip(np.sqrt(((map_traj[1:] - map_traj[:-1]) ** 2).sum(1)).mean() * 20, a_min=128, a_max=None)
                 radius.append(np.round(r).astype(int))
                 seq_names.append(seq.seq_name)
-                # print(r)
             comput_local_homo = (len(self.local_ic[sample_index]) == 0)
             local_map, local_ic, local_homo = scene_map.get_cropped_maps(scene_points, radius, compute_local_homo=comput_local_homo)
-            # local_map, local_ic, local_homo = [],[],[]
             if comput_local_homo:
                 self.local_ic[sample_index] = np.stack(local_ic)
                 self.local_homo[sample_index] = np.stack(local_homo)
@@ -170,7 +145,6 @@ class data_generator(object):
         obs_traj = torch.cat(obs_traj)
         fut_traj = torch.cat(fut_traj)
         all_traj = torch.cat([obs_traj, fut_traj], dim=1)
-        # print(all_traj.shape[0])
 
         # 6 states
         all_stat = []
@@ -194,11 +168,9 @@ class data_generator(object):
         # pos is stdized by mean = last obs step
         obs_traj_st[:, :, :2] = (obs_traj_st[:, :, :2] - obs_traj_st[-1, :, :2]) / self.scale
         obs_traj_st[:, :, 2:] /= self.scale
-        # print(obs_traj_st.max(), obs_traj_st.min())
-
         out = [
             obs_traj, fut_traj, obs_traj_st, fut_traj[:, :, 2:4] / self.scale, seq_start_end,
-            scene_maps, local_maps, local_ics, torch.tensor(local_homos).float().to(self.device), seq_names
+            scene_maps, None, local_maps, local_ics, torch.tensor(local_homos).float().to(self.device)
         ]
 
         return out

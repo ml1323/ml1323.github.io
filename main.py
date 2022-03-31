@@ -2,17 +2,11 @@ import argparse
 import numpy as np
 import torch
 
-# -----------------------------------------------------------------------------#
-from data.loader import data_loader
 from lg_cvae import Solver as lg_solver
 from sg_net import Solver as sg_solver
 from micro import Solver as micro_solver
-from util import str2bool, bool_flag
 from eval import Solver as eval_solver
 
-from data.nuscenes.config import Config
-from data.nuscenes_dataloader import data_generator
-###############################################################################
 
 # set the random seed manually for reproducibility
 SEED = 1
@@ -55,7 +49,7 @@ def create_parser():
                         help='cpu/cuda')
 
     # training hyperparameters
-    parser.add_argument('--batch_size', default=5, type=int,
+    parser.add_argument('--batch_size', default=8, type=int,
                         help='batch size')
     parser.add_argument('--lr', default=1e-3, type=float,
                         help='learning rate')
@@ -64,7 +58,7 @@ def create_parser():
     parser.add_argument('--ckpt_load_iter', default=0, type=int,
                         help='iter# to load the previously saved model ' +
                              '(default=0 to start from the scratch)')
-    parser.add_argument('--max_iter', default=0, type=float,
+    parser.add_argument('--max_iter', default=10000, type=float,
                         help='maximum number of batch iterations')
     parser.add_argument('--ckpt_dir', default='ckpts', type=str)
 
@@ -75,7 +69,7 @@ def create_parser():
     parser.add_argument('--obs_len', default=8, type=int)
     parser.add_argument('--pred_len', default=12, type=int)
     parser.add_argument('--skip', default=1, type=int)
-    parser.add_argument('--dataset_dir', default='datasets/pfsd', type=str, help='dataset directory')
+    parser.add_argument('--dataset_dir', default='./datasets/pfsd', type=str, help='dataset directory')
     parser.add_argument('--dataset_name', default='pfsd', type=str,
                         help='dataset name')
     parser.add_argument('--scale', default=1.0, type=float)
@@ -83,32 +77,29 @@ def create_parser():
     parser.add_argument('--anneal_epoch', default=10, type=int)
 
     # Macro
-    parser.add_argument('--pretrained_lg_path', default='ckpts/pretrained_models/lg_ae.pt', type=str)
+    parser.add_argument('--pretrained_lg_path', default='ckpts/pretrained_models_pfsd/lg_cvae.pt', type=str)
     parser.add_argument('--w_dim', default=10, type=int)
-    parser.add_argument('--fb', default=0.5, type=float)
-    parser.add_argument('--lg_kl_weight', default=0.05, type=float)
+    parser.add_argument('--fcomb', default=2, type=int)
+    parser.add_argument('--fb', default=1, type=float)
     parser.add_argument('--num_goal', default=3, type=int)
 
 
     # Micro
-    parser.add_argument('--kl_weight', default=100.0, type=float,
+    parser.add_argument('--kl_weight', default=50.0, type=float,
                         help='kl weight')
     parser.add_argument('--ll_prior_w', default=1.0, type=float)
     parser.add_argument('--z_dim', default=20, type=int,
                         help='dimension of the shared latent representation')
-    # Encoder
     parser.add_argument('--encoder_h_dim', default=64, type=int)
     parser.add_argument('--decoder_h_dim', default=128, type=int)
     parser.add_argument('--map_feat_dim', default=32, type=int)
     parser.add_argument('--dropout_mlp', default=0.3, type=float)
     parser.add_argument('--dropout_rnn', default=0.25, type=float)
-    # Decoder
-    parser.add_argument('--mlp_dim', default=32, type=int)
-    parser.add_argument('--map_mlp_dim', default=128, type=int)
-    parser.add_argument('--batch_norm', default=0, type=bool_flag)
+    parser.add_argument('--mlp_dim', default=256, type=int)
+    parser.add_argument('--map_mlp_dim', default=256, type=int)
 
     # Evaluation
-    parser.add_argument('--n_w', default=20, type=int)
+    parser.add_argument('--n_w', default=5, type=int)
     parser.add_argument('--n_z', default=1, type=int)
     return parser
 
@@ -116,29 +107,19 @@ def create_parser():
 # -----------------------------------------------------------------------------#
 
 def main(args):
+    assert args.dataset_name in ['pfsd', 'sdd', 'nuScenes'], ('For dataset_name, only one of [pfsd, sdd, nuScenes] are supported.')
+
     if args.ckpt_load_iter == args.max_iter:
 
         solver = eval_solver(args)
         solver.load_checkpoint()
 
-        ade_min, fde_min, \
-        ade_avg, fde_avg, \
-        ade_std, fde_std, \
-        sg_ade_min, sg_ade_avg, sg_ade_std, \
-        lg_fde_min, lg_fde_avg, lg_fde_std = solver.all_evaluation(n_w=args.n_w, n_z=args.n_z)
-
+        ade_min, fde_min = solver.all_evaluation()
+        print('------------------------------------------')
+        print('dataset name: ', args.dataset_name)
+        print('lg_sampling, micro_sampling: ', args.n_w, ', ', args.n_z)
         print('ade min: ', ade_min)
-        print('ade avg: ', ade_avg)
-        print('ade std: ', ade_std)
         print('fde min: ', fde_min)
-        print('fde avg: ', fde_avg)
-        print('fde std: ', fde_std)
-        print('sg_ade_min: ', sg_ade_min)
-        print('sg_ade_avg: ', sg_ade_avg)
-        print('sg_ade_std: ', sg_ade_std)
-        print('lg_fde_min: ', lg_fde_min)
-        print('lg_fde_avg: ', lg_fde_avg)
-        print('lg_fde_std: ', lg_fde_std)
         print('------------------------------------------')
 
     else:

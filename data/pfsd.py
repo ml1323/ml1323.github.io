@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 def seq_collate(data):
     (obs_seq_list, pred_seq_list,
-     obs_frames, fut_frames, map_path, inv_h_t,
+     map_path, inv_h_t,
      local_map, local_ic, local_homo, scale) = zip(*data)
     scale = scale[0]
 
@@ -21,17 +21,15 @@ def seq_collate(data):
 
     # Data format: batch, input_size, seq_len
     # LSTM input format: seq_len, batch, input_size
-    obs_traj = torch.cat(obs_seq_list, dim=0).permute(2, 0, 1)
-    fut_traj = torch.cat(pred_seq_list, dim=0).permute(2, 0, 1)
+    obs_traj = torch.stack(obs_seq_list).permute(2, 0, 1)
+    fut_traj = torch.stack(pred_seq_list).permute(2, 0, 1)
     seq_start_end = torch.LongTensor(seq_start_end)
 
-    obs_frames = np.concatenate(obs_frames, 0)
-    fut_frames = np.concatenate(fut_frames, 0)
-    map_path = np.concatenate(map_path, 0)
-    inv_h_t = np.concatenate(inv_h_t, 0)
-    local_map = np.concatenate(local_map, 0)
-    local_ic = np.concatenate(local_ic, 0)
-    local_homo = torch.cat(local_homo, 0)
+    map_path = np.stack(map_path)
+    inv_h_t = np.stack(inv_h_t)
+    local_map = np.stack(local_map)
+    local_ic = np.stack(local_ic)
+    local_homo = torch.stack(local_homo)
 
 
 
@@ -42,7 +40,7 @@ def seq_collate(data):
 
     out = [
         obs_traj, fut_traj, obs_traj_st, fut_traj[:,:,2:4] / scale, seq_start_end,
-        obs_frames, fut_frames, map_path, inv_h_t,
+        map_path, inv_h_t,
         local_map, local_ic, local_homo
     ]
 
@@ -103,7 +101,7 @@ class TrajectoryDataset(Dataset):
         self.map_file_name = all_data['map_file_name']
         self.inv_h_t = all_data['inv_h_t']
 
-        self.local_map = np.expand_dims(all_data['local_map'],1)
+        self.local_map = all_data['local_map']
         self.local_homo = all_data['local_homo']
         self.local_ic = all_data['local_ic']
 
@@ -115,15 +113,21 @@ class TrajectoryDataset(Dataset):
         return self.num_seq
 
     def __getitem__(self, index):
-        start, end = self.seq_start_end[index]
         out = [
-            self.obs_traj[start:end, :], self.fut_traj[start:end, :],
-            self.obs_frame_num[start:end], self.fut_frame_num[start:end],
-            np.array([self.map_file_name[index]] * (end - start)), np.array([self.inv_h_t[index]] * (end - start)),
-            self.local_map[start:end],
-            self.local_ic[start:end],
-            torch.from_numpy(self.local_homo[start:end]).float().to(self.device), self.scale
+            self.obs_traj[index, :], self.fut_traj[index, :],
+            self.map_file_name[index], self.inv_h_t[index],
+            self.local_map[index],
+            self.local_ic[index],
+            torch.from_numpy(self.local_homo[index]).float().to(self.device), self.scale
         ]
+        # start, end = self.seq_start_end[index]
+        # out = [
+        #     self.obs_traj[start:end, :], self.fut_traj[start:end, :],
+        #     np.array([self.map_file_name[index]] * (end - start)), np.array([self.inv_h_t[index]] * (end - start)),
+        #     self.local_map[start:end],
+        #     self.local_ic[start:end],
+        #     torch.from_numpy(self.local_homo[start:end]).float().to(self.device), self.scale
+        # ]
         return out
 
 
